@@ -1,0 +1,196 @@
+{
+  "name": "AI Customer Support Agent (RAG + WhatsApp / Telegram)",
+  "nodes": [
+    {
+      "id": "sticky-1",
+      "name": "📒 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-800, -300],
+      "parameters": {
+        "content": "## AI Customer Support Agent\n\nThis workflow creates an AI-powered customer support assistant using Retrieval-Augmented Generation (RAG).\n\n**Channels Supported**:\n- WhatsApp\n- Telegram\n\n**Capabilities**:\n- Answers customer questions from your documents\n- Uses AI (GPT / Gemini)\n- Escalates to a human when confidence is low\n\nIdeal for clinics, SaaS, and local businesses."
+      }
+    },
+    {
+      "id": "webhook-1",
+      "name": "Incoming Message",
+      "type": "n8n-nodes-base.webhook",
+      "position": [-600, 0],
+      "parameters": {
+        "path": "ai-support-agent",
+        "httpMethod": "POST",
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "sticky-2",
+      "name": "📒 Channel Normalization",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-400, -300],
+      "parameters": {
+        "content": "## Channel Normalization\n\nThis step normalizes incoming messages from WhatsApp or Telegram into a common format so the rest of the workflow remains channel-agnostic."
+      }
+    },
+    {
+      "id": "set-1",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.set",
+      "position": [-400, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "userMessage",
+              "value": "={{ $json.body.message || $json.body.text }}",
+              "type": "string"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $json.body.from || $json.body.chat_id }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-3",
+      "name": "📒 Knowledge Retrieval (RAG)",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-200, -300],
+      "parameters": {
+        "content": "## Knowledge Retrieval (RAG)\n\nThis node retrieves relevant knowledge chunks from your vector database.\n\nYou can connect:\n- Google Drive\n- Notion\n- Any vector DB (Qdrant, Pinecone, Supabase)\n\nNo credentials are hardcoded."
+      }
+    },
+    {
+      "id": "http-1",
+      "name": "Retrieve Knowledge",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [-200, 0],
+      "parameters": {
+        "url": "={{ $env.VECTOR_DB_ENDPOINT }}",
+        "method": "POST",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={ \"query\": $json.userMessage }"
+      }
+    },
+    {
+      "id": "sticky-4",
+      "name": "📒 AI Response Generation",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [100, -300],
+      "parameters": {
+        "content": "## AI Response Generation\n\nThis node generates a response using GPT or Gemini.\n\nThe model is instructed to:\n- Use retrieved context\n- Answer clearly\n- Provide a confidence score (0–1)"
+      }
+    },
+    {
+      "id": "ai-1",
+      "name": "Generate AI Answer",
+      "type": "n8n-nodes-base.openAi",
+      "position": [100, 0],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a customer support AI. Answer using the provided context. Return JSON with fields: answer, confidence (0 to 1)."
+          },
+          {
+            "role": "user",
+            "content": "Question: {{ $json.userMessage }}\n\nContext: {{ $json.data }}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sticky-5",
+      "name": "📒 Confidence Check",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [400, -300],
+      "parameters": {
+        "content": "## Confidence Check\n\nIf the AI confidence score is below the threshold, the message is escalated to a human operator."
+      }
+    },
+    {
+      "id": "if-1",
+      "name": "Low Confidence?",
+      "type": "n8n-nodes-base.if",
+      "position": [400, 0],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.confidence }}",
+              "operation": "smaller",
+              "value2": 0.6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sticky-6",
+      "name": "📒 Human Escalation",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [650, -200],
+      "parameters": {
+        "content": "## Human Escalation\n\nLow-confidence queries are forwarded to a human via Slack, email, or CRM.\n\nThis ensures quality and trust."
+      }
+    },
+    {
+      "id": "slack-1",
+      "name": "Notify Human Agent",
+      "type": "n8n-nodes-base.slack",
+      "position": [650, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "support-escalation",
+        "text": "Low confidence AI query:\n\nUser: {{ $json.userId }}\nMessage: {{ $json.userMessage }}"
+      }
+    },
+    {
+      "id": "sticky-7",
+      "name": "📒 Send AI Reply",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [650, 200],
+      "parameters": {
+        "content": "## Send AI Reply\n\nHigh-confidence AI responses are sent back to the user via WhatsApp or Telegram."
+      }
+    },
+    {
+      "id": "http-2",
+      "name": "Send Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 300],
+      "parameters": {
+        "url": "={{ $env.MESSAGE_API_ENDPOINT }}",
+        "method": "POST",
+        "jsonParameters": true,
+        "authentication": "none",
+        "bodyParametersJson": "={ \"to\": $json.userId, \"message\": $json.answer }"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Message": {
+      "main": [[{ "node": "Normalize Input", "type": "main", "index": 0 }]]
+    },
+    "Normalize Input": {
+      "main": [[{ "node": "Retrieve Knowledge", "type": "main", "index": 0 }]]
+    },
+    "Retrieve Knowledge": {
+      "main": [[{ "node": "Generate AI Answer", "type": "main", "index": 0 }]]
+    },
+    "Generate AI Answer": {
+      "main": [[{ "node": "Low Confidence?", "type": "main", "index": 0 }]]
+    },
+    "Low Confidence?": {
+      "main": [
+        [{ "node": "Notify Human Agent", "type": "main", "index": 0 }],
+        [{ "node": "Send Message", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}
